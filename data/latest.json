@@ -1,1 +1,23 @@
-{}
+{
+  "stages": {
+    "Draft": 6,
+    "Voting": 0,
+    "Approved": 0,
+    "Final": 1,
+    "Published": 1,
+    "Development": 0
+  },
+  "changelog": [
+    "This information is based on draft standards circulated for public enquiry (or DIS), or information\n                    published by CEN-CENELEC, in relation to the EU AI Act Standardisation Request",
+    "This mapping represents the intended coverage as standards are being developed",
+    "Standards are at different development stages - check stage indicators for maturity. A good overview\n                    of the overall process can be found here .",
+    "Final harmonised\n                        standards can differ from current drafts, drafts at Enquiry stage are not approved by\n                    national bodies",
+    "Some standards will contain normative\n                        references , these often change during the standards development process",
+    "Always consult official EU AI Act text, the OJEU and published harmonised standards for compliance",
+    "Stage 10 (Red): Project approved and initial drafting underway",
+    "Stage 20 (Yellow): Working Draft or Committee Draft being developed",
+    "Stage 40 (Purple): Enquiry/DIS Draft - circulated to national bodies for\n                            comment",
+    "Stage 50 (Teal): Approval stage - formal voting by national bodies",
+    "Stage 60 (Blue): Publication stage - standard is published"
+  ]
+}
