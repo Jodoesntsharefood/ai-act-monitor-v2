@@ -27,6 +27,10 @@ def fetch_current_status():
         page.wait_for_timeout(3000)
 
         html = page.content()
+        with open("debug.html", "w", encoding="utf-8") as f:
+            f.write(html)
+
+        print("DEBUG HTML saved")
         browser.close()
 
     soup = BeautifulSoup(html, "lxml")
