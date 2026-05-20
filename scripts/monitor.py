@@ -15,7 +15,7 @@ EMAIL_TO = os.environ["EMAIL_TO"]
 
 
 # =========================
-# 1. 抓页面
+# 1. 抓 HTML
 # =========================
 def fetch_html():
     with sync_playwright() as p:
@@ -32,54 +32,61 @@ def fetch_html():
 
 
 # =========================
-# 2. 提取指标（核心）
+# 2. 提取指标（精准版）
 # =========================
 def extract_metrics(soup):
     text = soup.get_text(" ", strip=True)
 
-    def find_number(pattern):
-        m = re.search(pattern, text)
-        return int(m.group(1)) if m else 0
+    def find(label):
+        pattern = rf"{label}\s*[:\-]?\s*([0-9,]+)"
+        m = re.search(pattern, text, re.IGNORECASE)
+        return int(m.group(1).replace(",", "")) if m else 0
 
     metrics = {
-        # Stage 分布
-        "stage_10": find_number(r"Stage\s*10[^0-9]*(\d+)"),
-        "stage_20": find_number(r"Stage\s*20[^0-9]*(\d+)"),
-        "stage_40": find_number(r"Stage\s*40[^0-9]*(\d+)"),
-        "stage_50": find_number(r"Stage\s*50[^0-9]*(\d+)"),
-        "stage_60": find_number(r"Stage\s*60[^0-9]*(\d+)"),
+        "total_standards": find("Total Standards"),
 
-        # 总数
-        "total": find_number(r"Total\s*standards[^0-9]*(\d+)"),
+        "stage_10_10_99": find("Stage 10-10.99"),
+        "stage_20_30_99": find("Stage 20-30.99"),
+        "stage_40_40_99": find("Stage 40-40.99"),
+        "stage_50_50_99": find("Stage 50-50.99"),
+        "stage_60_plus": find("Stage 60\\+"),
 
-        # OJEU
-        "ojeu": find_number(r"OJEU[^0-9]*(\d+)")
+        "ojeu": find("Cited in the OJEU"),
     }
 
     return metrics
 
 
 # =========================
-# 3. Changelog 提取
+# 3. Changelog 提取（只抓新增行）
 # =========================
 def extract_changelog(soup):
     logs = []
 
-    # 优先找 changelog 区域
-    candidates = soup.select("li, article, .timeline, .log, .changelog")
+    # 找 changelog 表格 / 列表
+    elements = soup.select("table tr, .changelog tr, li")
 
-    for c in candidates:
-        t = c.get_text(" ", strip=True)
+    for e in elements:
+        text = e.get_text(" ", strip=True)
 
-        if len(t) > 30:
-            logs.append(t)
+        # 过滤太短的噪声
+        if len(text) > 20:
+            logs.append(text)
 
-    # 去重
-    return list(dict.fromkeys(logs))[:30]
+    # 去重 + 保序
+    seen = set()
+    unique = []
+
+    for l in logs:
+        if l not in seen:
+            seen.add(l)
+            unique.append(l)
+
+    return unique
 
 
 # =========================
-# 4. 状态存储
+# 4. 存取状态
 # =========================
 def load_previous():
     if not Path(DATA_FILE).exists():
@@ -96,13 +103,20 @@ def save_current(data):
 
 
 # =========================
-# 5. diff（指标级）
+# 5. diff（严格按你的指标）
 # =========================
 def diff(old, new):
     changes = []
 
-    # 指标变化
-    for k in ["stage_10", "stage_20", "stage_40", "stage_50", "stage_60", "total", "ojeu"]:
+    for k in [
+        "total_standards",
+        "stage_10_10_99",
+        "stage_20_30_99",
+        "stage_40_40_99",
+        "stage_50_50_99",
+        "stage_60_plus",
+        "ojeu"
+    ]:
         if old.get(k) != new.get(k):
             changes.append({
                 "type": "METRIC_CHANGE",
@@ -111,7 +125,6 @@ def diff(old, new):
                 "new": new.get(k)
             })
 
-    # changelog 新增
     old_logs = set(old.get("changelog", []))
     new_logs = set(new.get("changelog", []))
 
@@ -119,7 +132,7 @@ def diff(old, new):
 
     if added:
         changes.append({
-            "type": "CHANGELOG",
+            "type": "CHANGELOG_NEW",
             "items": added
         })
 
@@ -145,10 +158,15 @@ def build_email(changes):
 
     for c in changes:
         if c["type"] == "METRIC_CHANGE":
-            html += f"<p><b>{c['metric']}</b>: {c['old']} → {c['new']}</p>"
+            html += f"""
+            <p>
+            <b>{c['metric']}</b><br>
+            {c['old']} → {c['new']}
+            </p>
+            """
 
-        if c["type"] == "CHANGELOG":
-            html += "<h3>Changelog</h3><ul>"
+        if c["type"] == "CHANGELOG_NEW":
+            html += "<h3>New Changelog Entries</h3><ul>"
             for i in c["items"]:
                 html += f"<li>{i}</li>"
             html += "</ul>"
@@ -174,7 +192,7 @@ def main():
     }
 
     print("[DEBUG] metrics:", metrics)
-    print("[DEBUG] changelog size:", len(changelog))
+    print("[DEBUG] changelog items:", len(changelog))
 
     previous = load_previous()
 
@@ -189,7 +207,7 @@ def main():
         print("No changes")
         return
 
-    print("Changes:", len(changes))
+    print("Changes detected:", len(changes))
 
     send_email(
         "AI Act Metrics Update",
