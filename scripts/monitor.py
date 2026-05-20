@@ -17,7 +17,7 @@ resend.api_key = RESEND_API_KEY
 
 def fetch_current_status():
     """
-    抓取网站当前标准状态
+    提取结构化标准数据
     """
 
     response = requests.get(
@@ -38,44 +38,76 @@ def fetch_current_status():
 
     soup = BeautifulSoup(response.text, "lxml")
 
-    results = []
+    standards = {}
 
-    # 提取页面中的所有表格
+    # 抓取所有表格
     tables = soup.find_all("table")
 
     for table in tables:
+
         rows = table.find_all("tr")
 
-        for row in rows:
-            cols = row.find_all(["td", "th"])
+        headers = []
+
+        for idx, row in enumerate(rows):
+
+            cols = row.find_all(["th", "td"])
 
             values = [
                 col.get_text(" ", strip=True)
                 for col in cols
             ]
 
-            if values:
-                results.append(values)
+            if not values:
+                continue
 
-    return results
+            # 第一行作为 header
+            if idx == 0:
+                headers = values
+                continue
+
+            # 跳过不完整行
+            if len(values) != len(headers):
+                continue
+
+            item = dict(zip(headers, values))
+
+            # 自动识别标准名称字段
+            standard_name = (
+                item.get("Standard")
+                or item.get("Title")
+                or item.get("Name")
+                or item.get("Reference")
+            )
+
+            # 自动识别状态字段
+            status = (
+                item.get("Status")
+                or item.get("Stage")
+                or item.get("State")
+            )
+
+            if not standard_name or not status:
+                continue
+
+            standards[standard_name] = {
+                "status": status,
+                "raw": item,
+            }
+
+    return standards
 
 
 def load_previous_status():
-    """
-    读取上一次快照
-    """
 
     if not Path(DATA_FILE).exists():
-        return None
+        return {}
 
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         return json.load(f)
 
 
 def save_status(status):
-    """
-    保存最新快照
-    """
 
     Path("data").mkdir(exist_ok=True)
 
@@ -88,87 +120,177 @@ def save_status(status):
         )
 
 
-def generate_diff(old, new):
+def compare_status(old, new):
     """
-    生成变化内容
+    精准比较状态变化
     """
 
-    old_set = set(
-        json.dumps(x, ensure_ascii=False)
-        for x in (old or [])
-    )
+    changes = []
 
-    new_set = set(
-        json.dumps(x, ensure_ascii=False)
-        for x in new
-    )
+    old_keys = set(old.keys())
+    new_keys = set(new.keys())
 
-    added = sorted(new_set - old_set)
-    removed = sorted(old_set - new_set)
+    # 新增标准
+    added = new_keys - old_keys
 
-    lines = []
+    for key in sorted(added):
+        changes.append({
+            "type": "NEW",
+            "standard": key,
+            "new_status": new[key]["status"],
+        })
 
-    if added:
-        lines.append("=== 新增 / 更新 ===\n")
+    # 删除标准
+    removed = old_keys - new_keys
 
-        for item in added:
-            lines.append(item)
+    for key in sorted(removed):
+        changes.append({
+            "type": "REMOVED",
+            "standard": key,
+            "old_status": old[key]["status"],
+        })
 
-    if removed:
-        lines.append("\n=== 删除 / 旧状态 ===\n")
+    # 状态变化
+    common = old_keys & new_keys
 
-        for item in removed:
-            lines.append(item)
+    for key in sorted(common):
 
-    return "\n".join(lines)
+        old_status = old[key]["status"]
+        new_status = new[key]["status"]
+
+        if old_status != new_status:
+
+            changes.append({
+                "type": "STATUS_CHANGED",
+                "standard": key,
+                "old_status": old_status,
+                "new_status": new_status,
+            })
+
+    return changes
 
 
-def send_email(subject, body):
+def build_email_html(changes):
+
+    rows = []
+
+    for change in changes:
+
+        if change["type"] == "NEW":
+
+            rows.append(f"""
+            <tr>
+                <td>NEW</td>
+                <td>{change['standard']}</td>
+                <td>-</td>
+                <td>{change['new_status']}</td>
+            </tr>
+            """)
+
+        elif change["type"] == "REMOVED":
+
+            rows.append(f"""
+            <tr>
+                <td>REMOVED</td>
+                <td>{change['standard']}</td>
+                <td>{change['old_status']}</td>
+                <td>-</td>
+            </tr>
+            """)
+
+        elif change["type"] == "STATUS_CHANGED":
+
+            rows.append(f"""
+            <tr>
+                <td>STATUS_CHANGED</td>
+                <td>{change['standard']}</td>
+                <td>{change['old_status']}</td>
+                <td>{change['new_status']}</td>
+            </tr>
+            """)
+
+    html = f"""
+    <h2>AI Act Standards 更新</h2>
+
+    <p>
+        检测到 <strong>{len(changes)}</strong> 个变化
+    </p>
+
+    <table border="1" cellpadding="8" cellspacing="0">
+        <tr>
+            <th>Type</th>
+            <th>Standard</th>
+            <th>Old Status</th>
+            <th>New Status</th>
+        </tr>
+
+        {''.join(rows)}
+
+    </table>
+
+    <br>
+
+    <p>
+        来源:
+        <a href="https://ai-act-standards.com/">
+            ai-act-standards.com
+        </a>
+    </p>
     """
-    使用 Resend 发送邮件
-    """
+
+    return html
+
+
+def send_email(subject, html):
 
     resend.Emails.send({
         "from": "onboarding@resend.dev",
         "to": [EMAIL_TO],
         "subject": subject,
-        "text": body,
+        "html": html,
     })
 
 
 def main():
-    print("Fetching current status...")
+
+    print("Fetching current standards...")
 
     current = fetch_current_status()
 
-    print(f"Fetched {len(current)} rows")
+    print(f"Fetched {len(current)} standards")
 
     previous = load_previous_status()
 
     # 第一次运行
-    if previous is None:
-        print("First run, saving snapshot")
+    if not previous:
+
+        print("First run - saving snapshot")
 
         save_status(current)
 
         return
 
-    # 比较变化
-    if current != previous:
-        print("Changes detected")
+    changes = compare_status(previous, current)
 
-        diff = generate_diff(previous, current)
+    # 没变化
+    if not changes:
 
-        send_email(
-            subject="AI Act Standards Changed",
-            body=diff,
-        )
+        print("No status changes detected")
 
-        save_status(current)
+        return
 
-        print("Email sent")
-    else:
-        print("No changes detected")
+    print(f"Detected {len(changes)} changes")
+
+    html = build_email_html(changes)
+
+    send_email(
+        subject=f"AI Act Standards Updated ({len(changes)} changes)",
+        html=html,
+    )
+
+    save_status(current)
+
+    print("Notification sent")
 
 
 if __name__ == "__main__":
