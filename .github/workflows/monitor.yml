@@ -2,10 +2,7 @@ name: Monitor AI Act Standards
 
 on:
   schedule:
-    # 每 6 小时运行一次
-    - cron: '0 */6 * * *'
-
-  # 支持手动运行
+    - cron: "0 */6 * * *"   # 每6小时
   workflow_dispatch:
 
 permissions:
@@ -16,17 +13,21 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: |
+          playwright install chromium
 
       - name: Run monitor
         env:
@@ -35,13 +36,12 @@ jobs:
         run: |
           python scripts/monitor.py
 
-      - name: Commit latest snapshot
+      - name: Commit snapshot
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
 
           git add data/latest.json
 
-          git diff --cached --quiet || git commit -m "Update AI Act snapshot"
-
+          git diff --cached --quiet || git commit -m "update snapshot"
           git push
