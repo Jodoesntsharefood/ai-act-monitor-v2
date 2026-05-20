@@ -2,8 +2,10 @@ name: Monitor AI Act Standards
 
 on:
   schedule:
+    # 每 6 小时运行一次
     - cron: '0 */6 * * *'
 
+  # 支持手动运行
   workflow_dispatch:
 
 permissions:
@@ -14,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -28,11 +30,7 @@ jobs:
 
       - name: Run monitor
         env:
-          SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-          SMTP_PORT: ${{ secrets.SMTP_PORT }}
-          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
         run: |
           python scripts/monitor.py
@@ -44,6 +42,6 @@ jobs:
 
           git add data/latest.json
 
-          git diff --cached --quiet || git commit -m "Update snapshot"
+          git diff --cached --quiet || git commit -m "Update AI Act snapshot"
 
           git push
