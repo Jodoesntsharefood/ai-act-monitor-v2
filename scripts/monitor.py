@@ -1,55 +1,63 @@
 import requests
 import json
-import re
-from pathlib import Path
 from bs4 import BeautifulSoup
+from pathlib import Path
 
-URL = "https://ai-act-standards.com/data.js"
+URL = "https://ai-act-standards.com/"
 STATE_FILE = "latest.json"
 
 
-# -------------------------
-# 1. 获取 data.js
-# -------------------------
-def fetch_js():
+# -----------------------------
+# 1. 获取页面
+# -----------------------------
+def fetch_html():
     r = requests.get(URL, timeout=30)
     r.raise_for_status()
     return r.text
 
 
-# -------------------------
-# 2. 从 JS 提取变量
-# -------------------------
-def extract_variable(js, name):
-    pattern = rf"const {name}\s*=\s*(\[\s*\{{.*?\}}\s*\]);"
-    match = re.search(pattern, js, re.S)
-    if not match:
-        return []
-    return json.loads(match.group(1))
-
-
-def extract_number_blocks(js):
-    """
-    直接抓 dashboard numbers（fallback）
-    """
-    def find(id_name):
-        m = re.search(rf'id="{id_name}">(\d+)<', js)
+# -----------------------------
+# 2. 提取 dashboard 数字
+# -----------------------------
+def extract_stats(html):
+    def get(id_):
+        import re
+        m = re.search(rf'id="{id_}">(\d+)<', html)
         return int(m.group(1)) if m else 0
 
     return {
-        "total": find("total-standards"),
-        "stage10": find("stage-10-count"),
-        "stage20": find("stage-20-count"),
-        "stage40": find("stage-40-count"),
-        "stage50": find("stage-50-count"),
-        "stage60": find("stage-60-count"),
-        "cited": find("stage-cited-count"),
+        "total": get("total-standards"),
+        "stage10": get("stage-10-count"),
+        "stage20": get("stage-20-count"),
+        "stage40": get("stage-40-count"),
+        "stage50": get("stage-50-count"),
+        "stage60": get("stage-60-count"),
+        "cited": get("stage-cited-count"),
     }
 
 
-# -------------------------
-# 3. 加载历史
-# -------------------------
+# -----------------------------
+# 3. 提取 changelog
+# -----------------------------
+def extract_changelog(html):
+    soup = BeautifulSoup(html, "html.parser")
+    rows = soup.select("#changelog-body tr")
+
+    logs = []
+    for row in rows:
+        cols = row.find_all("td")
+        if len(cols) >= 3:
+            logs.append({
+                "date": cols[0].get_text(strip=True),
+                "standard": cols[1].get_text(strip=True),
+                "change": cols[2].get_text(strip=True),
+            })
+    return logs
+
+
+# -----------------------------
+# 4. load state
+# -----------------------------
 def load_previous():
     if not Path(STATE_FILE).exists():
         return None
@@ -59,50 +67,62 @@ def load_previous():
         return None
 
 
-# -------------------------
-# 4. 保存
-# -------------------------
+# -----------------------------
+# 5. save state
+# -----------------------------
 def save_state(data):
     Path(STATE_FILE).write_text(json.dumps(data, indent=2))
 
 
-# -------------------------
-# 5. diff
-# -------------------------
+# -----------------------------
+# 6. diff logic
+# -----------------------------
 def diff(prev, curr):
     if not prev:
-        return "First run"
+        return {
+            "type": "first_run",
+            "message": "First run, snapshot saved."
+        }
 
     changes = []
 
+    # stats diff
     for k in curr["stats"]:
         if prev["stats"].get(k) != curr["stats"].get(k):
-            changes.append(f"{k}: {prev['stats'].get(k)} → {curr['stats'].get(k)}")
+            changes.append({
+                "field": k,
+                "before": prev["stats"].get(k),
+                "after": curr["stats"].get(k)
+            })
+
+    # changelog diff（新增行）
+    prev_logs = set(
+        (x["date"], x["standard"], x["change"])
+        for x in prev.get("changelog", [])
+    )
 
     new_logs = [
         x for x in curr["changelog"]
-        if x not in prev.get("changelog", [])
+        if (x["date"], x["standard"], x["change"]) not in prev_logs
     ]
 
     return {
+        "type": "update",
         "stats_changes": changes,
         "new_changelog": new_logs
     }
 
 
-# -------------------------
-# 6. 主逻辑
-# -------------------------
+# -----------------------------
+# 7. main
+# -----------------------------
 def main():
-    print("Fetching data.js...")
+    print("Fetching page...")
 
-    js = fetch_js()
+    html = fetch_html()
 
-    # 👉 不再解析 HTML DOM！
-    stats = extract_number_blocks(js)
-
-    # changelog（来自 JS）
-    changelog = extract_variable(js, "changelog")
+    stats = extract_stats(html)
+    changelog = extract_changelog(html)
 
     current = {
         "stats": stats,
@@ -110,13 +130,13 @@ def main():
     }
 
     previous = load_previous()
-    changes = diff(previous, current)
+    result = diff(previous, current)
 
     print("\n===== CURRENT STATS =====")
     print(json.dumps(stats, indent=2))
 
-    print("\n===== CHANGES =====")
-    print(changes)
+    print("\n===== DIFF =====")
+    print(json.dumps(result, indent=2))
 
     save_state(current)
 
