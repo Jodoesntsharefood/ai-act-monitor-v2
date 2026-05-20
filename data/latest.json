@@ -1,1 +1,36 @@
-{}
+{
+  "total_standards": 0,
+  "stage_10_10_99": 0,
+  "stage_20_30_99": 0,
+  "stage_40_40_99": 0,
+  "stage_50_50_99": 0,
+  "stage_60_plus": 0,
+  "ojeu": 0,
+  "changelog": [
+    "This information is based on draft standards circulated for public enquiry (or DIS), or information\n                    published by CEN-CENELEC, in relation to the EU AI Act Standardisation Request",
+    "This mapping represents the intended coverage as standards are being developed",
+    "Standards are at different development stages - check stage indicators for maturity. A good overview\n                    of the overall process can be found here .",
+    "Final harmonised\n                        standards can differ from current drafts, drafts at Enquiry stage are not approved by\n                    national bodies",
+    "Some standards will contain normative\n                        references , these often change during the standards development process",
+    "Always consult official EU AI Act text, the OJEU and published harmonised standards for compliance",
+    "2026-05-19 ISO/IEC 24970 Stage Progression Start of FDIS/Formal Vote",
+    "2026-05-19 prEN 18229-1 Stage Progression Start of Enquiry",
+    "2026-05-13 prEN 18228 Internal references Added internal normative reference from 18228 to 18229-1 per Enquiry text",
+    "2026-05-07 prEN 18228, 18282, 18286 Stage Progression Moved prEN 18228 and 18282 to Stage 40 and 18286 to 50.",
+    "2026-05-05 prEN 18229 Enhancement Added on-hover scopes for normative references",
+    "2026-04-27 prEN 18229 Project split Reflecting the split of 18229-1 into two parts, now -1 and -3",
+    "2026-03-26 prEN 18283 Stage progression Updated status of prEN 18283 to Stage 20",
+    "2026-03-24 prEN 18281 Scope amendments Updated scopes of prEN 18288 and 18286.",
+    "2026-03-24 prEN 18281 Stage progression Updated status of prEN 18281 to Stage 40",
+    "2026-02-22 Normative references Additional information Corrected location of prEN 18283 based on the latest information",
+    "2026-02-13 Normative references Additional information Added normative references based on the JTC 21 Inclusiveness newsletter",
+    "2026-01-08 FAQ Additional information Added FAQ section",
+    "2025-12-09 prEN 18229-2 Stage progression prEN 18229-2 launched for working draft consultation with national bodies",
+    "2025-12-01 All Mapping Initial publication of interactive standards mapping based on prEN 18286, Annex B, and CEN-CENELEC website project scopes.",
+    "Stage 10 (Red): Project approved and initial drafting underway",
+    "Stage 20 (Yellow): Working Draft or Committee Draft being developed",
+    "Stage 40 (Purple): Enquiry/DIS Draft - circulated to national bodies for\n                            comment",
+    "Stage 50 (Teal): Approval stage - formal voting by national bodies",
+    "Stage 60 (Blue): Publication stage - standard is published"
+  ]
+}
