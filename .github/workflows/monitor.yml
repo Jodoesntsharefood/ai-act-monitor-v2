@@ -1,4 +1,4 @@
-name: AI Act Monitor (Stage + Changelog)
+name: AI Act Metrics Monitor
 
 on:
   schedule:
@@ -40,5 +40,5 @@ jobs:
 
           git add data/latest.json
 
-          git diff --cached --quiet || git commit -m "update snapshot"
+          git diff --cached --quiet || git commit -m "update metrics snapshot"
           git push
