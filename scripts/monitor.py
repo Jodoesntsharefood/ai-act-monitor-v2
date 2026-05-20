@@ -1,7 +1,7 @@
 import os
 import json
+import re
 from pathlib import Path
-from collections import Counter
 
 import resend
 from bs4 import BeautifulSoup
@@ -15,15 +15,15 @@ EMAIL_TO = os.environ["EMAIL_TO"]
 
 
 # =========================
-# 1. 抓取页面
+# 1. 抓页面
 # =========================
-def fetch_page():
+def fetch_html():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
         page.goto(URL, wait_until="networkidle")
-        page.wait_for_timeout(3000)
+        page.wait_for_timeout(4000)
 
         html = page.content()
         browser.close()
@@ -32,42 +32,46 @@ def fetch_page():
 
 
 # =========================
-# 2. 提取 Stage 统计
+# 2. 提取指标（核心）
 # =========================
-def extract_stage_counts(soup):
+def extract_metrics(soup):
     text = soup.get_text(" ", strip=True)
 
-    # 常见 stage 关键词（按你网站情况可再加）
-    stages = [
-        "Draft",
-        "Voting",
-        "Approved",
-        "Final",
-        "Published",
-        "Development"
-    ]
+    def find_number(pattern):
+        m = re.search(pattern, text)
+        return int(m.group(1)) if m else 0
 
-    counts = {}
+    metrics = {
+        # Stage 分布
+        "stage_10": find_number(r"Stage\s*10[^0-9]*(\d+)"),
+        "stage_20": find_number(r"Stage\s*20[^0-9]*(\d+)"),
+        "stage_40": find_number(r"Stage\s*40[^0-9]*(\d+)"),
+        "stage_50": find_number(r"Stage\s*50[^0-9]*(\d+)"),
+        "stage_60": find_number(r"Stage\s*60[^0-9]*(\d+)"),
 
-    for stage in stages:
-        counts[stage] = text.count(stage)
+        # 总数
+        "total": find_number(r"Total\s*standards[^0-9]*(\d+)"),
 
-    return counts
+        # OJEU
+        "ojeu": find_number(r"OJEU[^0-9]*(\d+)")
+    }
+
+    return metrics
 
 
 # =========================
-# 3. 提取 Changelog
+# 3. Changelog 提取
 # =========================
 def extract_changelog(soup):
     logs = []
 
-    # 尝试找到 changelog 区域（通用写法）
-    candidates = soup.select("li, .changelog, .log, .timeline, article")
+    # 优先找 changelog 区域
+    candidates = soup.select("li, article, .timeline, .log, .changelog")
 
     for c in candidates:
         t = c.get_text(" ", strip=True)
 
-        if len(t) > 20:
+        if len(t) > 30:
             logs.append(t)
 
     # 去重
@@ -75,7 +79,7 @@ def extract_changelog(soup):
 
 
 # =========================
-# 4. 状态加载/保存
+# 4. 状态存储
 # =========================
 def load_previous():
     if not Path(DATA_FILE).exists():
@@ -92,18 +96,22 @@ def save_current(data):
 
 
 # =========================
-# 5. diff
+# 5. diff（指标级）
 # =========================
 def diff(old, new):
     changes = []
 
-    if old.get("stages") != new.get("stages"):
-        changes.append({
-            "type": "STAGE_CHANGED",
-            "old": old.get("stages"),
-            "new": new.get("stages")
-        })
+    # 指标变化
+    for k in ["stage_10", "stage_20", "stage_40", "stage_50", "stage_60", "total", "ojeu"]:
+        if old.get(k) != new.get(k):
+            changes.append({
+                "type": "METRIC_CHANGE",
+                "metric": k,
+                "old": old.get(k),
+                "new": new.get(k)
+            })
 
+    # changelog 新增
     old_logs = set(old.get("changelog", []))
     new_logs = set(new.get("changelog", []))
 
@@ -111,7 +119,7 @@ def diff(old, new):
 
     if added:
         changes.append({
-            "type": "CHANGELOG_ADDED",
+            "type": "CHANGELOG",
             "items": added
         })
 
@@ -122,25 +130,25 @@ def diff(old, new):
 # 6. email
 # =========================
 def send_email(subject, html):
-    resend.Emails.send({
-        "from": "onboarding@resend.dev",
+    resp = resend.Emails.send({
+        "from": "AI Monitor <onboarding@resend.dev>",
         "to": [EMAIL_TO],
         "subject": subject,
         "html": html,
     })
 
+    print("EMAIL RESPONSE:", resp)
 
-def build_html(changes):
-    html = "<h2>AI Act Update</h2>"
+
+def build_email(changes):
+    html = "<h2>AI Act Metrics Update</h2>"
 
     for c in changes:
-        if c["type"] == "STAGE_CHANGED":
-            html += "<h3>Stage changes</h3>"
-            html += f"<pre>{c['old']} → {c['new']}</pre>"
+        if c["type"] == "METRIC_CHANGE":
+            html += f"<p><b>{c['metric']}</b>: {c['old']} → {c['new']}</p>"
 
-        if c["type"] == "CHANGELOG_ADDED":
-            html += "<h3>New changelog</h3>"
-            html += "<ul>"
+        if c["type"] == "CHANGELOG":
+            html += "<h3>Changelog</h3><ul>"
             for i in c["items"]:
                 html += f"<li>{i}</li>"
             html += "</ul>"
@@ -154,21 +162,24 @@ def build_html(changes):
 def main():
     print("Fetching...")
 
-    html = fetch_page()
+    html = fetch_html()
     soup = BeautifulSoup(html, "lxml")
 
-    stages = extract_stage_counts(soup)
+    metrics = extract_metrics(soup)
     changelog = extract_changelog(soup)
 
     current = {
-        "stages": stages,
+        **metrics,
         "changelog": changelog
     }
+
+    print("[DEBUG] metrics:", metrics)
+    print("[DEBUG] changelog size:", len(changelog))
 
     previous = load_previous()
 
     if not previous:
-        print("First run → save")
+        print("First run → save snapshot")
         save_current(current)
         return
 
@@ -178,11 +189,11 @@ def main():
         print("No changes")
         return
 
-    print(f"Changes: {len(changes)}")
+    print("Changes:", len(changes))
 
     send_email(
-        subject="AI Act Monitor Update",
-        html=build_html(changes)
+        "AI Act Metrics Update",
+        build_email(changes)
     )
 
     save_current(current)
