@@ -9,12 +9,6 @@
   "changelog": [
     {
       "date": "2026-05-19",
-      "standard": "ISO/IEC 24970",
-      "type": "Stage Progression",
-      "description": "Start of FDIS/Formal Vote"
-    },
-    {
-      "date": "2026-05-19",
       "standard": "prEN 18229-1",
       "type": "Stage Progression",
       "description": "Start of Enquiry"
