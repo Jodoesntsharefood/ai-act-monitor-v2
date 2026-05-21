@@ -2,68 +2,107 @@ import os
 import re
 import json
 import requests
-from bs4 import BeautifulSoup
 
-URL = "https://ai-act-standards.com/"
+URL = "https://ai-act-standards.com/data.js"
+
 DATA_FILE = "data/latest.json"
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_TO = os.getenv("EMAIL_TO")
 
 
-def fetch_html():
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+def fetch_js():
+    r = requests.get(URL, timeout=30)
 
-    r = requests.get(URL, headers=headers, timeout=30)
     r.raise_for_status()
 
-    with open("debug.html", "w", encoding="utf-8") as f:
+    with open("debug_data.js", "w", encoding="utf-8") as f:
         f.write(r.text)
 
     return r.text
 
 
-def extract_number(soup, element_id):
-    el = soup.find(id=element_id)
+def js_object_to_json(js_text):
+    """
+    把 JS object 转成合法 JSON
+    """
 
-    if not el:
-        return 0
+    # 去掉尾逗号
+    js_text = re.sub(r",(\s*[}\]])", r"\1", js_text)
 
-    text = el.get_text(strip=True)
+    # 给 key 加双引号
+    js_text = re.sub(
+        r'([{,]\s*)([A-Za-z0-9_]+)\s*:',
+        r'\1"\2":',
+        js_text
+    )
 
-    match = re.search(r"\d+", text)
+    # 单引号转双引号
+    js_text = re.sub(r"'", '"', js_text)
+
+    return js_text
+
+
+def extract_array(js, var_name):
+    """
+    提取 const xxx = [...]
+    """
+
+    pattern = rf"const\s+{var_name}\s*=\s*(\[[\s\S]*?\]);"
+
+    match = re.search(pattern, js)
 
     if not match:
-        return 0
+        print(f"[ERROR] cannot find {var_name}")
+        return []
 
-    return int(match.group())
+    raw = match.group(1)
+
+    cleaned = js_object_to_json(raw)
+
+    try:
+        return json.loads(cleaned)
+
+    except Exception as e:
+        print(f"[ERROR] parsing {var_name}")
+        print(e)
+
+        with open(f"debug_{var_name}.txt", "w", encoding="utf-8") as f:
+            f.write(cleaned)
+
+        return []
 
 
-def extract_changelog(soup):
-    rows = []
+def calculate_metrics(standards, normrefs):
+    all_items = standards + [
+        r for r in normrefs if "stage" in r
+    ]
 
-    tbody = soup.find("tbody", {"id": "changelog-body"})
+    counts = {
+        "total_standards": len(all_items),
+        "stage_10": 0,
+        "stage_20": 0,
+        "stage_40": 0,
+        "stage_50": 0,
+        "stage_60": 0,
+        "ojeu": 0
+    }
 
-    if not tbody:
-        return rows
+    for item in all_items:
+        stage = item.get("stage", 0)
 
-    trs = tbody.find_all("tr")
+        if stage >= 60:
+            counts["stage_60"] += 1
+        elif stage >= 50:
+            counts["stage_50"] += 1
+        elif stage >= 40:
+            counts["stage_40"] += 1
+        elif stage >= 20:
+            counts["stage_20"] += 1
+        elif stage >= 10:
+            counts["stage_10"] += 1
 
-    for tr in trs:
-        cols = tr.find_all("td")
-
-        if len(cols) < 3:
-            continue
-
-        rows.append({
-            "date": cols[0].get_text(" ", strip=True),
-            "standard": cols[1].get_text(" ", strip=True),
-            "change": cols[2].get_text(" ", strip=True),
-        })
-
-    return rows
+    return counts
 
 
 def load_previous():
@@ -83,11 +122,11 @@ def save_current(data):
     with open(DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-    print("[DEBUG] latest.json saved")
+    print("[INFO] latest.json updated")
 
 
 def compare(old, new):
-    changes = []
+    metric_changes = []
 
     metric_keys = [
         "total_standards",
@@ -104,44 +143,41 @@ def compare(old, new):
         new_val = new.get(key, 0)
 
         if old_val != new_val:
-            changes.append(
+            metric_changes.append(
                 f"{key}: {old_val} → {new_val}"
             )
 
-    old_logs = old.get("changelog", [])
-    new_logs = new.get("changelog", [])
-
-    old_set = {
+    old_logs = {
         json.dumps(x, sort_keys=True)
-        for x in old_logs
+        for x in old.get("changelog", [])
     }
 
-    added = []
+    new_entries = []
 
-    for item in new_logs:
+    for item in new.get("changelog", []):
         s = json.dumps(item, sort_keys=True)
 
-        if s not in old_set:
-            added.append(item)
+        if s not in old_logs:
+            new_entries.append(item)
 
-    return changes, added
+    return metric_changes, new_entries
 
 
 def send_email(subject, body):
     if not RESEND_API_KEY or not EMAIL_TO:
-        print("[WARN] Email env vars missing")
+        print("[WARN] email env missing")
         return
+
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
 
     payload = {
         "from": "AI Monitor <onboarding@resend.dev>",
         "to": [EMAIL_TO],
         "subject": subject,
         "html": f"<pre>{body}</pre>"
-    }
-
-    headers = {
-        "Authorization": f"Bearer {RESEND_API_KEY}",
-        "Content-Type": "application/json"
     }
 
     r = requests.post(
@@ -151,34 +187,39 @@ def send_email(subject, body):
         timeout=30
     )
 
-    print("[DEBUG] email status:", r.status_code)
-    print("[DEBUG] email response:", r.text)
+    print("[INFO] email:", r.status_code)
+    print(r.text)
 
 
 def main():
-    print("Fetching website...")
+    print("Fetching data.js...")
 
-    html = fetch_html()
+    js = fetch_js()
 
-    soup = BeautifulSoup(html, "html.parser")
+    standards = extract_array(js, "standards")
+    normrefs = extract_array(js, "normativeReferences")
+    changelog = extract_array(js, "changelog")
+
+    print("[INFO] standards:", len(standards))
+    print("[INFO] normrefs:", len(normrefs))
+    print("[INFO] changelog:", len(changelog))
+
+    metrics = calculate_metrics(
+        standards,
+        normrefs
+    )
 
     current = {
-        "total_standards": extract_number(soup, "total-standards"),
-        "stage_10": extract_number(soup, "stage-10-count"),
-        "stage_20": extract_number(soup, "stage-20-count"),
-        "stage_40": extract_number(soup, "stage-40-count"),
-        "stage_50": extract_number(soup, "stage-50-count"),
-        "stage_60": extract_number(soup, "stage-60-count"),
-        "ojeu": extract_number(soup, "stage-cited-count"),
-        "changelog": extract_changelog(soup)
+        **metrics,
+        "changelog": changelog
     }
 
     print(json.dumps(current, indent=2))
 
     previous = load_previous()
 
-    if previous is None:
-        print("First run, saving baseline")
+    if previous is None or previous == {}:
+        print("First run")
 
         save_current(current)
 
@@ -189,10 +230,13 @@ def main():
 
         return
 
-    changes, new_logs = compare(previous, current)
+    metric_changes, new_entries = compare(
+        previous,
+        current
+    )
 
-    if not changes and not new_logs:
-        print("No changes detected")
+    if not metric_changes and not new_entries:
+        print("No changes")
 
         save_current(current)
 
@@ -200,21 +244,21 @@ def main():
 
     lines = []
 
-    if changes:
+    if metric_changes:
         lines.append("=== METRIC CHANGES ===")
 
-        for c in changes:
+        for c in metric_changes:
             lines.append(c)
 
-    if new_logs:
+    if new_entries:
         lines.append("")
         lines.append("=== NEW CHANGELOG ENTRIES ===")
 
-        for item in new_logs:
+        for item in new_entries:
             lines.append(
-                f"{item['date']} | "
-                f"{item['standard']} | "
-                f"{item['change']}"
+                f"{item.get('date')} | "
+                f"{item.get('standard')} | "
+                f"{item.get('description')}"
             )
 
     body = "\n".join(lines)
