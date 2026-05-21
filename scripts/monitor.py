@@ -137,6 +137,12 @@ def main():
 
     print("\n===== DIFF =====")
     print(json.dumps(result, indent=2))
+   
+    print("=== STATS ===")
+    print(stats)
+
+    print("=== CHANGELOG LENGTH ===")
+    print(len(changelog))
 
     save_state(current)
 
