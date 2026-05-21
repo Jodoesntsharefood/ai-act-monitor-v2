@@ -10,6 +10,13 @@ DATA_FILE = "data/latest.json"
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_TO = os.getenv("EMAIL_TO")
 
+# =========================
+# 测试模式
+# True = 每次都发邮件
+# False = 只有变化才发
+# =========================
+FORCE_EMAIL = True
+
 
 def fetch_js():
     r = requests.get(URL, timeout=30)
@@ -24,30 +31,23 @@ def fetch_js():
 
 def js_object_to_json(js_text):
     """
-    把 JS object 转成合法 JSON
+    JS object -> valid JSON
     """
 
-    # 去掉尾逗号
     js_text = re.sub(r",(\s*[}\]])", r"\1", js_text)
 
-    # 给 key 加双引号
     js_text = re.sub(
         r'([{,]\s*)([A-Za-z0-9_]+)\s*:',
         r'\1"\2":',
         js_text
     )
 
-    # 单引号转双引号
     js_text = re.sub(r"'", '"', js_text)
 
     return js_text
 
 
 def extract_array(js, var_name):
-    """
-    提取 const xxx = [...]
-    """
-
     pattern = rf"const\s+{var_name}\s*=\s*(\[[\s\S]*?\]);"
 
     match = re.search(pattern, js)
@@ -165,7 +165,7 @@ def compare(old, new):
 
 def send_email(subject, body):
     if not RESEND_API_KEY or not EMAIL_TO:
-        print("[WARN] email env missing")
+        print("[WARN] Missing email env vars")
         return
 
     headers = {
@@ -187,8 +187,8 @@ def send_email(subject, body):
         timeout=30
     )
 
-    print("[INFO] email:", r.status_code)
-    print(r.text)
+    print("[INFO] email status:", r.status_code)
+    print("[INFO] email response:", r.text)
 
 
 def main():
@@ -235,14 +235,26 @@ def main():
         current
     )
 
-    if not metric_changes and not new_entries:
-        print("No changes")
+    # ====================================
+    # 正常模式：无变化不发邮件
+    # FORCE_EMAIL=True 时跳过这里
+    # ====================================
+    if (
+        not metric_changes
+        and not new_entries
+        and not FORCE_EMAIL
+    ):
+        print("No changes detected")
 
         save_current(current)
 
         return
 
     lines = []
+
+    if FORCE_EMAIL:
+        lines.append("TEST MODE ENABLED")
+        lines.append("")
 
     if metric_changes:
         lines.append("=== METRIC CHANGES ===")
@@ -261,12 +273,17 @@ def main():
                 f"{item.get('description')}"
             )
 
+    # 没变化但强制测试
+    if FORCE_EMAIL and not metric_changes and not new_entries:
+        lines.append("No actual changes.")
+        lines.append("This is a forced test email.")
+
     body = "\n".join(lines)
 
     print(body)
 
     send_email(
-        "AI Act Standards Updated",
+        "AI Act Standards Monitor",
         body
     )
 
