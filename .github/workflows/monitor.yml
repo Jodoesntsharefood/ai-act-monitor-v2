@@ -2,19 +2,15 @@ name: AI Act Monitor
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
-
+    - cron: "0 */6 * * *"   # 每6小时
   workflow_dispatch:
-
-permissions:
-  contents: write
 
 jobs:
   monitor:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -23,29 +19,17 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Run monitor
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
-        run: |
-          python scripts/monitor.py
+          EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
+        run: python scripts/monitor.py
 
-      - name: Upload debug html
+      - name: Upload debug artifact
         uses: actions/upload-artifact@v4
         with:
-          name: debug-html
-          path: debug.html
-
-      - name: Commit latest.json
-        run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-
-          git add data/latest.json
-
-          git diff --cached --quiet || git commit -m "Update latest snapshot"
-
-          git push
+          name: latest-json
+          path: latest.json
