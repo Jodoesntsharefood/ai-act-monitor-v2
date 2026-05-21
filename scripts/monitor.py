@@ -1,305 +1,232 @@
-import requests
-import json
 import os
+import re
+import json
+import requests
 from bs4 import BeautifulSoup
-from pathlib import Path
-import resend
 
 URL = "https://ai-act-standards.com/"
-STATE_FILE = "latest.json"
+DATA_FILE = "data/latest.json"
 
-# =========================
-# RESEND
-# =========================
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_TO = os.getenv("EMAIL_TO")
 
-if RESEND_API_KEY:
-    resend.api_key = RESEND_API_KEY
 
-
-# =========================
-# FETCH HTML
-# =========================
 def fetch_html():
-    print("[DEBUG] Fetching HTML...")
-    r = requests.get(URL, timeout=30)
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
 
-    print(f"[DEBUG] Status code: {r.status_code}")
-    print(f"[DEBUG] HTML length: {len(r.text)}")
-
+    r = requests.get(URL, headers=headers, timeout=30)
     r.raise_for_status()
 
-    Path("debug.html").write_text(r.text)
-
-    print("[DEBUG] debug.html written")
+    with open("debug.html", "w", encoding="utf-8") as f:
+        f.write(r.text)
 
     return r.text
 
 
-# =========================
-# EXTRACT STATS
-# =========================
-def extract_stats(soup):
-    print("[DEBUG] Extracting stats...")
+def extract_number(soup, element_id):
+    el = soup.find(id=element_id)
 
-    stats = {}
+    if not el:
+        return 0
 
-    mapping = {
-        "total": "total-standards",
-        "stage10": "stage-10-count",
-        "stage20": "stage-20-count",
-        "stage40": "stage-40-count",
-        "stage50": "stage-50-count",
-        "stage60": "stage-60-count",
-        "cited": "stage-cited-count",
-    }
+    text = el.get_text(strip=True)
 
-    for key, html_id in mapping.items():
-        el = soup.find(id=html_id)
+    match = re.search(r"\d+", text)
 
-        if el:
-            value = el.get_text(strip=True)
-            print(f"[DEBUG] {html_id} -> {value}")
+    if not match:
+        return 0
 
-            try:
-                stats[key] = int(value)
-            except:
-                stats[key] = 0
-        else:
-            print(f"[WARNING] Missing element: {html_id}")
-            stats[key] = 0
-
-    return stats
+    return int(match.group())
 
 
-# =========================
-# EXTRACT CHANGELOG
-# =========================
 def extract_changelog(soup):
-    print("[DEBUG] Extracting changelog...")
+    rows = []
 
     tbody = soup.find("tbody", {"id": "changelog-body"})
 
     if not tbody:
-        print("[WARNING] changelog-body not found")
-        return []
+        return rows
 
-    rows = tbody.find_all("tr")
+    trs = tbody.find_all("tr")
 
-    print(f"[DEBUG] changelog rows found: {len(rows)}")
+    for tr in trs:
+        cols = tr.find_all("td")
 
-    logs = []
+        if len(cols) < 3:
+            continue
 
-    for row in rows:
-        cols = row.find_all("td")
-
-        if len(cols) >= 3:
-            item = {
-                "date": cols[0].get_text(strip=True),
-                "standard": cols[1].get_text(strip=True),
-                "change": cols[2].get_text(strip=True),
-            }
-
-            logs.append(item)
-
-    return logs
-
-
-# =========================
-# LOAD PREVIOUS
-# =========================
-def load_previous():
-    print("[DEBUG] Loading previous state...")
-
-    if not Path(STATE_FILE).exists():
-        print("[DEBUG] latest.json does not exist")
-        return None
-
-    content = Path(STATE_FILE).read_text().strip()
-
-    if not content:
-        print("[WARNING] latest.json is empty")
-        return None
-
-    try:
-        data = json.loads(content)
-        print("[DEBUG] previous state loaded")
-        return data
-
-    except Exception as e:
-        print("[ERROR] Failed loading latest.json")
-        print(e)
-        return None
-
-
-# =========================
-# SAVE STATE
-# =========================
-def save_state(data):
-    print("[DEBUG] Saving latest.json...")
-
-    payload = json.dumps(
-        data,
-        indent=2,
-        ensure_ascii=False
-    )
-
-    Path(STATE_FILE).write_text(payload)
-
-    print("[DEBUG] latest.json written")
-    print(payload)
-
-
-# =========================
-# DIFF
-# =========================
-def diff(prev, curr):
-    changes = []
-
-    if not prev:
-        print("[DEBUG] First run detected")
-
-        return {
-            "first_run": True,
-            "changes": [],
-            "new_logs": curr["changelog"]
-        }
-
-    # stats diff
-    for k in curr["stats"]:
-        old = prev["stats"].get(k)
-        new = curr["stats"].get(k)
-
-        if old != new:
-            changes.append(
-                f"{k}: {old} -> {new}"
-            )
-
-    # changelog diff
-    prev_logs = {
-        json.dumps(x, sort_keys=True)
-        for x in prev.get("changelog", [])
-    }
-
-    new_logs = []
-
-    for log in curr["changelog"]:
-        s = json.dumps(log, sort_keys=True)
-
-        if s not in prev_logs:
-            new_logs.append(log)
-
-    return {
-        "first_run": False,
-        "changes": changes,
-        "new_logs": new_logs
-    }
-
-
-# =========================
-# EMAIL
-# =========================
-def send_email(result, current):
-    if not RESEND_API_KEY:
-        print("[WARNING] Missing RESEND_API_KEY")
-        return
-
-    if not EMAIL_TO:
-        print("[WARNING] Missing EMAIL_TO")
-        return
-
-    if (
-        not result["changes"]
-        and not result["new_logs"]
-        and not result["first_run"]
-    ):
-        print("[DEBUG] No changes detected, skipping email")
-        return
-
-    print("[DEBUG] Sending email...")
-
-    html = "<h2>AI Act Monitor Update</h2>"
-
-    html += "<h3>Current Stats</h3>"
-    html += "<table border='1' cellpadding='6'>"
-
-    for k, v in current["stats"].items():
-        html += f"<tr><td>{k}</td><td>{v}</td></tr>"
-
-    html += "</table>"
-
-    if result["changes"]:
-        html += "<h3>Stats Changes</h3><ul>"
-
-        for c in result["changes"]:
-            html += f"<li>{c}</li>"
-
-        html += "</ul>"
-
-    if result["new_logs"]:
-        html += "<h3>New Changelog Entries</h3><ul>"
-
-        for log in result["new_logs"]:
-            html += (
-                f"<li>"
-                f"{log['date']} | "
-                f"{log['standard']} | "
-                f"{log['change']}"
-                f"</li>"
-            )
-
-        html += "</ul>"
-
-    try:
-        resend.Emails.send({
-            "from": "onboarding@resend.dev",
-            "to": EMAIL_TO,
-            "subject": "AI Act Monitor Update",
-            "html": html
+        rows.append({
+            "date": cols[0].get_text(" ", strip=True),
+            "standard": cols[1].get_text(" ", strip=True),
+            "change": cols[2].get_text(" ", strip=True),
         })
 
-        print("[DEBUG] Email sent")
-
-    except Exception as e:
-        print("[ERROR] Email failed")
-        print(e)
+    return rows
 
 
-# =========================
-# MAIN
-# =========================
+def load_previous():
+    if not os.path.exists(DATA_FILE):
+        return None
+
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return None
+
+
+def save_current(data):
+    os.makedirs("data", exist_ok=True)
+
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    print("[DEBUG] latest.json saved")
+
+
+def compare(old, new):
+    changes = []
+
+    metric_keys = [
+        "total_standards",
+        "stage_10",
+        "stage_20",
+        "stage_40",
+        "stage_50",
+        "stage_60",
+        "ojeu"
+    ]
+
+    for key in metric_keys:
+        old_val = old.get(key, 0)
+        new_val = new.get(key, 0)
+
+        if old_val != new_val:
+            changes.append(
+                f"{key}: {old_val} → {new_val}"
+            )
+
+    old_logs = old.get("changelog", [])
+    new_logs = new.get("changelog", [])
+
+    old_set = {
+        json.dumps(x, sort_keys=True)
+        for x in old_logs
+    }
+
+    added = []
+
+    for item in new_logs:
+        s = json.dumps(item, sort_keys=True)
+
+        if s not in old_set:
+            added.append(item)
+
+    return changes, added
+
+
+def send_email(subject, body):
+    if not RESEND_API_KEY or not EMAIL_TO:
+        print("[WARN] Email env vars missing")
+        return
+
+    payload = {
+        "from": "AI Monitor <onboarding@resend.dev>",
+        "to": [EMAIL_TO],
+        "subject": subject,
+        "html": f"<pre>{body}</pre>"
+    }
+
+    headers = {
+        "Authorization": f"Bearer {RESEND_API_KEY}",
+        "Content-Type": "application/json"
+    }
+
+    r = requests.post(
+        "https://api.resend.com/emails",
+        headers=headers,
+        json=payload,
+        timeout=30
+    )
+
+    print("[DEBUG] email status:", r.status_code)
+    print("[DEBUG] email response:", r.text)
+
+
 def main():
+    print("Fetching website...")
+
     html = fetch_html()
 
     soup = BeautifulSoup(html, "html.parser")
 
-    stats = extract_stats(soup)
-    changelog = extract_changelog(soup)
-
-    print("[DEBUG] FINAL STATS:")
-    print(stats)
-
-    print("[DEBUG] CHANGELOG COUNT:")
-    print(len(changelog))
-
     current = {
-        "stats": stats,
-        "changelog": changelog
+        "total_standards": extract_number(soup, "total-standards"),
+        "stage_10": extract_number(soup, "stage-10-count"),
+        "stage_20": extract_number(soup, "stage-20-count"),
+        "stage_40": extract_number(soup, "stage-40-count"),
+        "stage_50": extract_number(soup, "stage-50-count"),
+        "stage_60": extract_number(soup, "stage-60-count"),
+        "ojeu": extract_number(soup, "stage-cited-count"),
+        "changelog": extract_changelog(soup)
     }
+
+    print(json.dumps(current, indent=2))
 
     previous = load_previous()
 
-    result = diff(previous, current)
+    if previous is None:
+        print("First run, saving baseline")
 
-    print("[DEBUG] DIFF RESULT:")
-    print(json.dumps(result, indent=2))
+        save_current(current)
 
-    save_state(current)
+        send_email(
+            "AI Act Monitor Initialized",
+            json.dumps(current, indent=2, ensure_ascii=False)
+        )
 
-    send_email(result, current)
+        return
 
-    print("[DEBUG] Script completed successfully")
+    changes, new_logs = compare(previous, current)
+
+    if not changes and not new_logs:
+        print("No changes detected")
+
+        save_current(current)
+
+        return
+
+    lines = []
+
+    if changes:
+        lines.append("=== METRIC CHANGES ===")
+
+        for c in changes:
+            lines.append(c)
+
+    if new_logs:
+        lines.append("")
+        lines.append("=== NEW CHANGELOG ENTRIES ===")
+
+        for item in new_logs:
+            lines.append(
+                f"{item['date']} | "
+                f"{item['standard']} | "
+                f"{item['change']}"
+            )
+
+    body = "\n".join(lines)
+
+    print(body)
+
+    send_email(
+        "AI Act Standards Updated",
+        body
+    )
+
+    save_current(current)
 
 
 if __name__ == "__main__":
