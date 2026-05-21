@@ -1,128 +1,287 @@
 import requests
 import json
+import os
 from bs4 import BeautifulSoup
 from pathlib import Path
+import resend
 
 URL = "https://ai-act-standards.com/"
 STATE_FILE = "latest.json"
 
+# =========================
+# RESEND
+# =========================
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+EMAIL_TO = os.getenv("EMAIL_TO")
 
-# -----------------------------
-# 1. 获取页面
-# -----------------------------
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
+
+
+# =========================
+# FETCH HTML
+# =========================
 def fetch_html():
+    print("[DEBUG] Fetching HTML...")
     r = requests.get(URL, timeout=30)
+
+    print(f"[DEBUG] Status code: {r.status_code}")
+    print(f"[DEBUG] HTML length: {len(r.text)}")
+
     r.raise_for_status()
+
+    Path("debug.html").write_text(r.text)
+
+    print("[DEBUG] debug.html written")
+
     return r.text
 
 
-# -----------------------------
-# 2. 提取 dashboard 数字
-# -----------------------------
-def extract_stats(html):
-    def get(id_):
-        import re
-        m = re.search(rf'id="{id_}">(\d+)<', html)
-        return int(m.group(1)) if m else 0
+# =========================
+# EXTRACT STATS
+# =========================
+def extract_stats(soup):
+    print("[DEBUG] Extracting stats...")
 
-    return {
-        "total": get("total-standards"),
-        "stage10": get("stage-10-count"),
-        "stage20": get("stage-20-count"),
-        "stage40": get("stage-40-count"),
-        "stage50": get("stage-50-count"),
-        "stage60": get("stage-60-count"),
-        "cited": get("stage-cited-count"),
+    stats = {}
+
+    mapping = {
+        "total": "total-standards",
+        "stage10": "stage-10-count",
+        "stage20": "stage-20-count",
+        "stage40": "stage-40-count",
+        "stage50": "stage-50-count",
+        "stage60": "stage-60-count",
+        "cited": "stage-cited-count",
     }
 
+    for key, html_id in mapping.items():
+        el = soup.find(id=html_id)
 
-# -----------------------------
-# 3. 提取 changelog
-# -----------------------------
-def extract_changelog(html):
-    soup = BeautifulSoup(html, "html.parser")
-    rows = soup.select("#changelog-body tr")
+        if el:
+            value = el.get_text(strip=True)
+            print(f"[DEBUG] {html_id} -> {value}")
+
+            try:
+                stats[key] = int(value)
+            except:
+                stats[key] = 0
+        else:
+            print(f"[WARNING] Missing element: {html_id}")
+            stats[key] = 0
+
+    return stats
+
+
+# =========================
+# EXTRACT CHANGELOG
+# =========================
+def extract_changelog(soup):
+    print("[DEBUG] Extracting changelog...")
+
+    tbody = soup.find("tbody", {"id": "changelog-body"})
+
+    if not tbody:
+        print("[WARNING] changelog-body not found")
+        return []
+
+    rows = tbody.find_all("tr")
+
+    print(f"[DEBUG] changelog rows found: {len(rows)}")
 
     logs = []
+
     for row in rows:
         cols = row.find_all("td")
+
         if len(cols) >= 3:
-            logs.append({
+            item = {
                 "date": cols[0].get_text(strip=True),
                 "standard": cols[1].get_text(strip=True),
                 "change": cols[2].get_text(strip=True),
-            })
+            }
+
+            logs.append(item)
+
     return logs
 
 
-# -----------------------------
-# 4. load state
-# -----------------------------
+# =========================
+# LOAD PREVIOUS
+# =========================
 def load_previous():
+    print("[DEBUG] Loading previous state...")
+
     if not Path(STATE_FILE).exists():
+        print("[DEBUG] latest.json does not exist")
         return None
+
+    content = Path(STATE_FILE).read_text().strip()
+
+    if not content:
+        print("[WARNING] latest.json is empty")
+        return None
+
     try:
-        return json.loads(Path(STATE_FILE).read_text())
-    except:
+        data = json.loads(content)
+        print("[DEBUG] previous state loaded")
+        return data
+
+    except Exception as e:
+        print("[ERROR] Failed loading latest.json")
+        print(e)
         return None
 
 
-# -----------------------------
-# 5. save state
-# -----------------------------
+# =========================
+# SAVE STATE
+# =========================
 def save_state(data):
-    Path(STATE_FILE).write_text(json.dumps(data, indent=2))
+    print("[DEBUG] Saving latest.json...")
+
+    payload = json.dumps(
+        data,
+        indent=2,
+        ensure_ascii=False
+    )
+
+    Path(STATE_FILE).write_text(payload)
+
+    print("[DEBUG] latest.json written")
+    print(payload)
 
 
-# -----------------------------
-# 6. diff logic
-# -----------------------------
+# =========================
+# DIFF
+# =========================
 def diff(prev, curr):
-    if not prev:
-        return {
-            "type": "first_run",
-            "message": "First run, snapshot saved."
-        }
-
     changes = []
+
+    if not prev:
+        print("[DEBUG] First run detected")
+
+        return {
+            "first_run": True,
+            "changes": [],
+            "new_logs": curr["changelog"]
+        }
 
     # stats diff
     for k in curr["stats"]:
-        if prev["stats"].get(k) != curr["stats"].get(k):
-            changes.append({
-                "field": k,
-                "before": prev["stats"].get(k),
-                "after": curr["stats"].get(k)
-            })
+        old = prev["stats"].get(k)
+        new = curr["stats"].get(k)
 
-    # changelog diff（新增行）
-    prev_logs = set(
-        (x["date"], x["standard"], x["change"])
+        if old != new:
+            changes.append(
+                f"{k}: {old} -> {new}"
+            )
+
+    # changelog diff
+    prev_logs = {
+        json.dumps(x, sort_keys=True)
         for x in prev.get("changelog", [])
-    )
+    }
 
-    new_logs = [
-        x for x in curr["changelog"]
-        if (x["date"], x["standard"], x["change"]) not in prev_logs
-    ]
+    new_logs = []
+
+    for log in curr["changelog"]:
+        s = json.dumps(log, sort_keys=True)
+
+        if s not in prev_logs:
+            new_logs.append(log)
 
     return {
-        "type": "update",
-        "stats_changes": changes,
-        "new_changelog": new_logs
+        "first_run": False,
+        "changes": changes,
+        "new_logs": new_logs
     }
 
 
-# -----------------------------
-# 7. main
-# -----------------------------
-def main():
-    print("Fetching page...")
+# =========================
+# EMAIL
+# =========================
+def send_email(result, current):
+    if not RESEND_API_KEY:
+        print("[WARNING] Missing RESEND_API_KEY")
+        return
 
+    if not EMAIL_TO:
+        print("[WARNING] Missing EMAIL_TO")
+        return
+
+    if (
+        not result["changes"]
+        and not result["new_logs"]
+        and not result["first_run"]
+    ):
+        print("[DEBUG] No changes detected, skipping email")
+        return
+
+    print("[DEBUG] Sending email...")
+
+    html = "<h2>AI Act Monitor Update</h2>"
+
+    html += "<h3>Current Stats</h3>"
+    html += "<table border='1' cellpadding='6'>"
+
+    for k, v in current["stats"].items():
+        html += f"<tr><td>{k}</td><td>{v}</td></tr>"
+
+    html += "</table>"
+
+    if result["changes"]:
+        html += "<h3>Stats Changes</h3><ul>"
+
+        for c in result["changes"]:
+            html += f"<li>{c}</li>"
+
+        html += "</ul>"
+
+    if result["new_logs"]:
+        html += "<h3>New Changelog Entries</h3><ul>"
+
+        for log in result["new_logs"]:
+            html += (
+                f"<li>"
+                f"{log['date']} | "
+                f"{log['standard']} | "
+                f"{log['change']}"
+                f"</li>"
+            )
+
+        html += "</ul>"
+
+    try:
+        resend.Emails.send({
+            "from": "onboarding@resend.dev",
+            "to": EMAIL_TO,
+            "subject": "AI Act Monitor Update",
+            "html": html
+        })
+
+        print("[DEBUG] Email sent")
+
+    except Exception as e:
+        print("[ERROR] Email failed")
+        print(e)
+
+
+# =========================
+# MAIN
+# =========================
+def main():
     html = fetch_html()
 
-    stats = extract_stats(html)
-    changelog = extract_changelog(html)
+    soup = BeautifulSoup(html, "html.parser")
+
+    stats = extract_stats(soup)
+    changelog = extract_changelog(soup)
+
+    print("[DEBUG] FINAL STATS:")
+    print(stats)
+
+    print("[DEBUG] CHANGELOG COUNT:")
+    print(len(changelog))
 
     current = {
         "stats": stats,
@@ -130,21 +289,17 @@ def main():
     }
 
     previous = load_previous()
+
     result = diff(previous, current)
 
-    print("\n===== CURRENT STATS =====")
-    print(json.dumps(stats, indent=2))
-
-    print("\n===== DIFF =====")
+    print("[DEBUG] DIFF RESULT:")
     print(json.dumps(result, indent=2))
-   
-    print("=== STATS ===")
-    print(stats)
-
-    print("=== CHANGELOG LENGTH ===")
-    print(len(changelog))
 
     save_state(current)
+
+    send_email(result, current)
+
+    print("[DEBUG] Script completed successfully")
 
 
 if __name__ == "__main__":
