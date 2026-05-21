@@ -1,12 +1,18 @@
 {
   "total_standards": 16,
-  "stage_10": 0,
-  "stage_20": 6,
+  "stage_10": 1,
+  "stage_20": 5,
   "stage_40": 5,
-  "stage_50": 0,
-  "stage_60": 5,
+  "stage_50": 2,
+  "stage_60": 3,
   "ojeu": 0,
   "changelog": [
+    {
+      "date": "2026-05-19",
+      "standard": "ISO/IEC 24970",
+      "type": "Stage Progression",
+      "description": "Start of FDIS/Formal Vote"
+    },
     {
       "date": "2026-05-19",
       "standard": "prEN 18229-1",
