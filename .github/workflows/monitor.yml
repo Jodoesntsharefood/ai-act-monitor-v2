@@ -3,6 +3,7 @@ name: AI Act Monitor
 on:
   schedule:
     - cron: "0 */6 * * *"
+
   workflow_dispatch:
 
 jobs:
@@ -10,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Python
@@ -19,17 +20,36 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip install resend
 
       - name: Run monitor
-        run: python scripts/monitor.py
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          EMAIL_TO: ${{ secrets.EMAIL_TO }}
+        run: |
+          python scripts/monitor.py
 
-      - name: Upload state
+      - name: DEBUG FILES
+        run: |
+          echo "===== ROOT FILES ====="
+          ls -al
+
+          echo "===== latest.json ====="
+          cat latest.json || true
+
+          echo "===== debug.html size ====="
+          wc -c debug.html || true
+
+      - name: Upload latest.json
         uses: actions/upload-artifact@v4
         with:
-          name: monitor-state
+          name: latest-json
           path: latest.json
-      - name: Debug files
-        run: |
-          ls -al
-          cat latest.json || true
+
+      - name: Upload debug.html
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-html
+          path: debug.html
