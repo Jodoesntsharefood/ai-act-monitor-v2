@@ -1,293 +1,209 @@
-import os
-import re
-import json
 import requests
+import json
+import os
+from bs4 import BeautifulSoup
+from datetime import datetime
 
-URL = "https://ai-act-standards.com/data.js"
-
-DATA_FILE = "data/latest.json"
+URL = "https://ai-act-standards.com/"
+DATA_FILE = "latest.json"
 
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_TO = os.getenv("EMAIL_TO")
-
-# =========================
-# 测试模式
-# True = 每次都发邮件
-# False = 只有变化才发
-# =========================
-FORCE_EMAIL = True
+EMAIL_FROM = os.getenv("EMAIL_FROM", EMAIL_TO)
 
 
-def fetch_js():
+# -----------------------------
+# 抓取数据
+# -----------------------------
+def fetch_data():
+    print("[INFO] Fetching website...")
+
     r = requests.get(URL, timeout=30)
+    soup = BeautifulSoup(r.text, "html.parser")
 
-    r.raise_for_status()
+    def get(id_):
+        el = soup.find(id=id_)
+        return int(el.text.strip()) if el else 0
 
-    with open("debug_data.js", "w", encoding="utf-8") as f:
-        f.write(r.text)
-
-    return r.text
-
-
-def js_object_to_json(js_text):
-    """
-    JS object -> valid JSON
-    """
-
-    js_text = re.sub(r",(\s*[}\]])", r"\1", js_text)
-
-    js_text = re.sub(
-        r'([{,]\s*)([A-Za-z0-9_]+)\s*:',
-        r'\1"\2":',
-        js_text
-    )
-
-    js_text = re.sub(r"'", '"', js_text)
-
-    return js_text
-
-
-def extract_array(js, var_name):
-    pattern = rf"const\s+{var_name}\s*=\s*(\[[\s\S]*?\]);"
-
-    match = re.search(pattern, js)
-
-    if not match:
-        print(f"[ERROR] cannot find {var_name}")
-        return []
-
-    raw = match.group(1)
-
-    cleaned = js_object_to_json(raw)
-
-    try:
-        return json.loads(cleaned)
-
-    except Exception as e:
-        print(f"[ERROR] parsing {var_name}")
-        print(e)
-
-        with open(f"debug_{var_name}.txt", "w", encoding="utf-8") as f:
-            f.write(cleaned)
-
-        return []
-
-
-def calculate_metrics(standards, normrefs):
-    all_items = standards + [
-        r for r in normrefs if "stage" in r
-    ]
-
-    counts = {
-        "total_standards": len(all_items),
-        "stage_10": 0,
-        "stage_20": 0,
-        "stage_40": 0,
-        "stage_50": 0,
-        "stage_60": 0,
-        "ojeu": 0
+    data = {
+        "total_standards": get("total-standards"),
+        "stage_10": get("stage-10-count"),
+        "stage_20": get("stage-20-count"),
+        "stage_40": get("stage-40-count"),
+        "stage_50": get("stage-50-count"),
+        "stage_60": get("stage-60-count"),
+        "ojeu": get("stage-cited-count"),
+        "timestamp": datetime.utcnow().isoformat()
     }
 
-    for item in all_items:
-        stage = item.get("stage", 0)
-
-        if stage >= 60:
-            counts["stage_60"] += 1
-        elif stage >= 50:
-            counts["stage_50"] += 1
-        elif stage >= 40:
-            counts["stage_40"] += 1
-        elif stage >= 20:
-            counts["stage_20"] += 1
-        elif stage >= 10:
-            counts["stage_10"] += 1
-
-    return counts
+    print("[INFO] scraped:", data)
+    return data
 
 
-def load_previous():
+# -----------------------------
+# 读取旧数据
+# -----------------------------
+def load_old():
     if not os.path.exists(DATA_FILE):
         return None
-
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except:
-        return None
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
 
-def save_current(data):
-    os.makedirs("data", exist_ok=True)
-
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-    print("[INFO] latest.json updated")
-
-
-def compare(old, new):
-    metric_changes = []
-
-    metric_keys = [
-        "total_standards",
-        "stage_10",
-        "stage_20",
-        "stage_40",
-        "stage_50",
-        "stage_60",
-        "ojeu"
-    ]
-
-    for key in metric_keys:
-        old_val = old.get(key, 0)
-        new_val = new.get(key, 0)
-
-        if old_val != new_val:
-            metric_changes.append(
-                f"{key}: {old_val} → {new_val}"
-            )
-
-    old_logs = {
-        json.dumps(x, sort_keys=True)
-        for x in old.get("changelog", [])
-    }
-
-    new_entries = []
-
-    for item in new.get("changelog", []):
-        s = json.dumps(item, sort_keys=True)
-
-        if s not in old_logs:
-            new_entries.append(item)
-
-    return metric_changes, new_entries
+# -----------------------------
+# 保存
+# -----------------------------
+def save(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
 
-def send_email(subject, body):
-    if not RESEND_API_KEY or not EMAIL_TO:
-        print("[WARN] Missing email env vars")
-        return
+# -----------------------------
+# 计算变化
+# -----------------------------
+def diff(old, new):
+    if not old:
+        return {}
 
-    headers = {
-        "Authorization": f"Bearer {RESEND_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    changes = {}
+    for k in new:
+        if k in old and old[k] != new[k]:
+            changes[k] = (old[k], new[k])
+    return changes
+
+
+# -----------------------------
+# HTML Dashboard Email
+# -----------------------------
+def build_email_html(data, changes):
+    def row(label, key):
+        old, new = changes.get(key, (None, data[key]))
+
+        if old is None:
+            arrow = ""
+            color = ""
+        elif new > old:
+            arrow = "🟢 ↑"
+            color = "style='color:green'"
+        elif new < old:
+            arrow = "🔴 ↓"
+            color = "style='color:red'"
+        else:
+            arrow = ""
+            color = ""
+
+        return f"""
+        <tr>
+            <td>{label}</td>
+            <td {color}><b>{new}</b> {arrow}</td>
+        </tr>
+        """
+
+    return f"""
+    <html>
+    <body style="font-family: Arial; background:#f6f6f6; padding:20px;">
+
+        <div style="max-width:700px; margin:auto; background:white; padding:20px; border-radius:10px;">
+
+            <h2>📊 AI Act Monitor Dashboard</h2>
+
+            <p>
+                🔗 Source: 
+                <a href="{URL}" target="_blank">{URL}</a>
+            </p>
+
+            <hr>
+
+            <h3>📌 Standards Overview</h3>
+
+            <table border="1" cellpadding="8" cellspacing="0" width="100%" style="border-collapse: collapse;">
+                <tr><th>Metric</th><th>Value</th></tr>
+
+                {row("Total Standards", "total_standards")}
+                {row("Stage 10", "stage_10")}
+                {row("Stage 20", "stage_20")}
+                {row("Stage 40", "stage_40")}
+                {row("Stage 50", "stage_50")}
+                {row("Stage 60", "stage_60")}
+                {row("OJEU", "ojeu")}
+            </table>
+
+            <hr>
+
+            <h3>📝 Changes</h3>
+            <p>
+                {format_changes(changes)}
+            </p>
+
+            <hr>
+
+            <p style="font-size:12px;color:gray;">
+                Generated at {data['timestamp']}
+            </p>
+
+        </div>
+
+    </body>
+    </html>
+    """
+
+
+# -----------------------------
+# 格式化变化
+# -----------------------------
+def format_changes(changes):
+    if not changes:
+        return "No changes"
+
+    html = "<ul>"
+    for k, (old, new) in changes.items():
+        html += f"<li><b>{k}</b>: {old} → {new}</li>"
+    html += "</ul>"
+    return html
+
+
+# -----------------------------
+# 发送邮件
+# -----------------------------
+def send_email(html):
+    print("[DEBUG] EMAIL_TO:", EMAIL_TO)
+    print("[DEBUG] EMAIL_FROM:", EMAIL_FROM)
 
     payload = {
-        "from": "AI Monitor <onboarding@resend.dev>",
+        "from": EMAIL_FROM,
         "to": [EMAIL_TO],
-        "subject": subject,
-        "html": f"<pre>{body}</pre>"
+        "subject": "📊 AI Act Monitor Dashboard Update",
+        "html": html
     }
 
     r = requests.post(
         "https://api.resend.com/emails",
-        headers=headers,
-        json=payload,
-        timeout=30
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type": "application/json"
+        },
+        json=payload
     )
 
     print("[INFO] email status:", r.status_code)
     print("[INFO] email response:", r.text)
 
 
+# -----------------------------
+# main
+# -----------------------------
 def main():
-    print("Fetching data.js...")
+    new_data = fetch_data()
+    old_data = load_old()
 
-    js = fetch_js()
+    changes = diff(old_data, new_data)
 
-    standards = extract_array(js, "standards")
-    normrefs = extract_array(js, "normativeReferences")
-    changelog = extract_array(js, "changelog")
+    save(new_data)
 
-    print("[INFO] standards:", len(standards))
-    print("[INFO] normrefs:", len(normrefs))
-    print("[INFO] changelog:", len(changelog))
+    html = build_email_html(new_data, changes)
+    send_email(html)
 
-    metrics = calculate_metrics(
-        standards,
-        normrefs
-    )
-
-    current = {
-        **metrics,
-        "changelog": changelog
-    }
-
-    print(json.dumps(current, indent=2))
-
-    previous = load_previous()
-
-    if previous is None or previous == {}:
-        print("First run")
-
-        save_current(current)
-
-        send_email(
-            "AI Act Monitor Initialized",
-            json.dumps(current, indent=2, ensure_ascii=False)
-        )
-
-        return
-
-    metric_changes, new_entries = compare(
-        previous,
-        current
-    )
-
-    # ====================================
-    # 正常模式：无变化不发邮件
-    # FORCE_EMAIL=True 时跳过这里
-    # ====================================
-    if (
-        not metric_changes
-        and not new_entries
-        and not FORCE_EMAIL
-    ):
-        print("No changes detected")
-
-        save_current(current)
-
-        return
-
-    lines = []
-
-    if FORCE_EMAIL:
-        lines.append("TEST MODE ENABLED")
-        lines.append("")
-
-    if metric_changes:
-        lines.append("=== METRIC CHANGES ===")
-
-        for c in metric_changes:
-            lines.append(c)
-
-    if new_entries:
-        lines.append("")
-        lines.append("=== NEW CHANGELOG ENTRIES ===")
-
-        for item in new_entries:
-            lines.append(
-                f"{item.get('date')} | "
-                f"{item.get('standard')} | "
-                f"{item.get('description')}"
-            )
-
-    # 没变化但强制测试
-    if FORCE_EMAIL and not metric_changes and not new_entries:
-        lines.append("No actual changes.")
-        lines.append("This is a forced test email.")
-
-    body = "\n".join(lines)
-
-    print(body)
-
-    send_email(
-        "AI Act Standards Monitor",
-        body
-    )
-
-    save_current(current)
+    print("[DONE]")
 
 
 if __name__ == "__main__":
