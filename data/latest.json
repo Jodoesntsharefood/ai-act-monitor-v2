@@ -1,10 +1,95 @@
 {
-  "total_standards": 7,
-  "stage_10": 2,
-  "stage_20": 4,
-  "stage_40": 1,
-  "stage_50": 1,
-  "stage_60": 0,
+  "total_standards": 16,
+  "stage_10": 1,
+  "stage_20": 5,
+  "stage_40": 5,
+  "stage_50": 2,
+  "stage_60": 3,
   "ojeu": 0,
-  "changelog": []
+  "changelog": [
+    {
+      "date": "2026-05-19",
+      "standard": "ISO/IEC 24970",
+      "type": "Stage Progression",
+      "description": "Start of FDIS/Formal Vote"
+    },
+    {
+      "date": "2026-05-19",
+      "standard": "prEN 18229-1",
+      "type": "Stage Progression",
+      "description": "Start of Enquiry"
+    },
+    {
+      "date": "2026-05-13",
+      "standard": "prEN 18228",
+      "type": "Internal references",
+      "description": "Added internal normative reference from 18228 to 18229-1 per Enquiry text"
+    },
+    {
+      "date": "2026-05-07",
+      "standard": "prEN 18228, 18282, 18286",
+      "type": "Stage Progression",
+      "description": "Moved prEN 18228 and 18282 to Stage 40 and 18286 to 50."
+    },
+    {
+      "date": "2026-05-05",
+      "standard": "prEN 18229",
+      "type": "Enhancement",
+      "description": "Added on-hover scopes for normative references"
+    },
+    {
+      "date": "2026-04-27",
+      "standard": "prEN 18229",
+      "type": "Project split",
+      "description": "Reflecting the split of 18229-1 into two parts, now -1 and -3"
+    },
+    {
+      "date": "2026-03-26",
+      "standard": "prEN 18283",
+      "type": "Stage progression",
+      "description": "Updated status of prEN 18283 to Stage 20"
+    },
+    {
+      "date": "2026-03-24",
+      "standard": "prEN 18281",
+      "type": "Scope amendments",
+      "description": "Updated scopes of prEN 18288 and 18286."
+    },
+    {
+      "date": "2026-03-24",
+      "standard": "prEN 18281",
+      "type": "Stage progression",
+      "description": "Updated status of prEN 18281 to Stage 40"
+    },
+    {
+      "date": "2026-02-22",
+      "standard": "Normative references",
+      "type": "Additional information",
+      "description": "Corrected location of prEN 18283 based on the latest information"
+    },
+    {
+      "date": "2026-02-13",
+      "standard": "Normative references",
+      "type": "Additional information",
+      "description": "Added normative references based on the JTC 21 Inclusiveness newsletter"
+    },
+    {
+      "date": "2026-01-08",
+      "standard": "FAQ",
+      "type": "Additional information",
+      "description": "Added FAQ section"
+    },
+    {
+      "date": "2025-12-09",
+      "standard": "prEN 18229-2",
+      "type": "Stage progression",
+      "description": "prEN 18229-2 launched for working draft consultation with national bodies"
+    },
+    {
+      "date": "2025-12-01",
+      "standard": "All",
+      "type": "Mapping",
+      "description": "Initial publication of interactive standards mapping based on prEN 18286, Annex B, and CEN-CENELEC website project scopes."
+    }
+  ]
 }
