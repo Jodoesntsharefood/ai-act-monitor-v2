@@ -15,7 +15,7 @@ EMAIL_TO = os.getenv("EMAIL_TO")
 # True  = 每次运行都发邮件（测试）
 # False = 只有变化才发
 # ==================================
-FORCE_EMAIL = True
+FORCE_EMAIL = False
 
 
 def fetch_js():
