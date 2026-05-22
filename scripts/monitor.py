@@ -2,6 +2,7 @@ import os
 import re
 import json
 import requests
+from datetime import datetime
 
 URL = "https://ai-act-standards.com/data.js"
 
@@ -11,14 +12,15 @@ RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_TO = os.getenv("EMAIL_TO")
 
 # =========================
-# 测试模式
-# True = 每次都发邮件
+# True  = 每次都发邮件（测试）
 # False = 只有变化才发
 # =========================
 FORCE_EMAIL = True
 
 
 def fetch_js():
+    print("[INFO] Fetching website...")
+
     r = requests.get(URL, timeout=30)
 
     r.raise_for_status()
@@ -34,14 +36,17 @@ def js_object_to_json(js_text):
     JS object -> valid JSON
     """
 
+    # 去掉尾逗号
     js_text = re.sub(r",(\s*[}\]])", r"\1", js_text)
 
+    # 给 key 加双引号
     js_text = re.sub(
         r'([{,]\s*)([A-Za-z0-9_]+)\s*:',
         r'\1"\2":',
         js_text
     )
 
+    # 单引号 -> 双引号
     js_text = re.sub(r"'", '"', js_text)
 
     return js_text
@@ -112,7 +117,11 @@ def load_previous():
     try:
         with open(DATA_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+
+    except Exception as e:
+        print("[WARN] failed loading previous json")
+        print(e)
+
         return None
 
 
@@ -173,12 +182,58 @@ def send_email(subject, body):
         "Content-Type": "application/json"
     }
 
+    html_content = f"""
+    <html>
+    <body style="
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        color: #222;
+        padding: 20px;
+    ">
+
+        <h2>AI Act Standards Monitor</h2>
+
+        <p>
+            Monitoring update detected.
+        </p>
+
+        <div style="
+            background:#f4f4f4;
+            padding:15px;
+            border-radius:8px;
+            white-space:pre-wrap;
+            font-family:Consolas, monospace;
+        ">
+{body}
+        </div>
+
+        <br>
+
+        <p>
+            Source website:
+            <a href="https://ai-act-standards.com/" target="_blank">
+                https://ai-act-standards.com/
+            </a>
+        </p>
+
+        <hr>
+
+        <p style="font-size:12px;color:#777;">
+            Sent automatically by GitHub Actions
+        </p>
+
+    </body>
+    </html>
+    """
+
     payload = {
-        "from": "AI Monitor <onboarding@resend.dev>",
+        "from": "AI ACT Monitor <onboarding@resend.dev>",
         "to": [EMAIL_TO],
         "subject": subject,
-        "html": f"<pre>{body}</pre>"
+        "html": html_content
     }
+
+    print("[DEBUG] EMAIL_TO:", EMAIL_TO)
 
     r = requests.post(
         "https://api.resend.com/emails",
@@ -192,8 +247,6 @@ def send_email(subject, body):
 
 
 def main():
-    print("Fetching data.js...")
-
     js = fetch_js()
 
     standards = extract_array(js, "standards")
@@ -211,15 +264,18 @@ def main():
 
     current = {
         **metrics,
+        "timestamp": datetime.utcnow().isoformat(),
         "changelog": changelog
     }
 
-    print(json.dumps(current, indent=2))
+    print("[INFO] scraped:")
+    print(json.dumps(current, indent=2, ensure_ascii=False))
 
     previous = load_previous()
 
+    # 第一次运行
     if previous is None or previous == {}:
-        print("First run")
+        print("[INFO] First run")
 
         save_current(current)
 
@@ -235,16 +291,13 @@ def main():
         current
     )
 
-    # ====================================
-    # 正常模式：无变化不发邮件
-    # FORCE_EMAIL=True 时跳过这里
-    # ====================================
+    # 无变化
     if (
         not metric_changes
         and not new_entries
         and not FORCE_EMAIL
     ):
-        print("No changes detected")
+        print("[INFO] No changes detected")
 
         save_current(current)
 
@@ -273,7 +326,6 @@ def main():
                 f"{item.get('description')}"
             )
 
-    # 没变化但强制测试
     if FORCE_EMAIL and not metric_changes and not new_entries:
         lines.append("No actual changes.")
         lines.append("This is a forced test email.")
@@ -288,6 +340,8 @@ def main():
     )
 
     save_current(current)
+
+    print("[DONE] monitoring complete")
 
 
 if __name__ == "__main__":
