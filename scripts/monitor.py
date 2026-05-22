@@ -11,10 +11,10 @@ DATA_FILE = "data/latest.json"
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 EMAIL_TO = os.getenv("EMAIL_TO")
 
-# =========================
-# True  = 每次都发邮件（测试）
+# ==================================
+# True  = 每次运行都发邮件（测试）
 # False = 只有变化才发
-# =========================
+# ==================================
 FORCE_EMAIL = True
 
 
@@ -39,7 +39,7 @@ def js_object_to_json(js_text):
     # 去掉尾逗号
     js_text = re.sub(r",(\s*[}\]])", r"\1", js_text)
 
-    # 给 key 加双引号
+    # key 加双引号
     js_text = re.sub(
         r'([{,]\s*)([A-Za-z0-9_]+)\s*:',
         r'\1"\2":',
@@ -152,9 +152,11 @@ def compare(old, new):
         new_val = new.get(key, 0)
 
         if old_val != new_val:
-            metric_changes.append(
-                f"{key}: {old_val} → {new_val}"
-            )
+            metric_changes.append({
+                "key": key,
+                "old": old_val,
+                "new": new_val
+            })
 
     old_logs = {
         json.dumps(x, sort_keys=True)
@@ -172,7 +174,154 @@ def compare(old, new):
     return metric_changes, new_entries
 
 
-def send_email(subject, body):
+def build_dashboard_html(current, metric_changes, new_entries):
+
+    metric_map = {
+        "total_standards": "Total Standards",
+        "stage_10": "Stage 10",
+        "stage_20": "Stage 20",
+        "stage_40": "Stage 40",
+        "stage_50": "Stage 50",
+        "stage_60": "Stage 60",
+        "ojeu": "OJEU"
+    }
+
+    change_lookup = {
+        item["key"]: item
+        for item in metric_changes
+    }
+
+    table_rows = ""
+
+    for key, label in metric_map.items():
+
+        value = current.get(key, 0)
+
+        badge = ""
+
+        if key in change_lookup:
+
+            old_val = change_lookup[key]["old"]
+            new_val = change_lookup[key]["new"]
+
+            if new_val > old_val:
+                badge = " 🟢 ↑"
+            elif new_val < old_val:
+                badge = " 🔴 ↓"
+
+        table_rows += f"""
+        <tr>
+            <td style="padding:10px;border:1px solid #ddd;">
+                {label}
+            </td>
+
+            <td style="padding:10px;border:1px solid #ddd;">
+                {value}{badge}
+            </td>
+        </tr>
+        """
+
+    changes_html = ""
+
+    if metric_changes:
+
+        changes_html += """
+        <h3>📝 Changes</h3>
+        <ul>
+        """
+
+        for item in metric_changes:
+
+            changes_html += f"""
+            <li>
+                {item['key']}: {item['old']} → {item['new']}
+            </li>
+            """
+
+        changes_html += "</ul>"
+
+    changelog_html = ""
+
+    if new_entries:
+
+        changelog_html += """
+        <h3>📌 New Changelog Entries</h3>
+        <ul>
+        """
+
+        for item in new_entries:
+
+            changelog_html += f"""
+            <li>
+                <b>{item.get('date')}</b><br>
+                {item.get('standard')}<br>
+                {item.get('description')}
+            </li>
+            <br>
+            """
+
+        changelog_html += "</ul>"
+
+    html = f"""
+    <html>
+    <body style="
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        color: #222;
+        line-height: 1.6;
+    ">
+
+        <h2>📊 AI Act Monitor Dashboard</h2>
+
+        <p>
+            🔗 Source:
+            <a href="https://ai-act-standards.com/" target="_blank">
+                https://ai-act-standards.com/
+            </a>
+        </p>
+
+        <table style="
+            border-collapse: collapse;
+            width: 420px;
+            margin-top: 15px;
+        ">
+            <tr style="background:#f4f4f4;">
+                <th style="padding:10px;border:1px solid #ddd;">
+                    Metric
+                </th>
+
+                <th style="padding:10px;border:1px solid #ddd;">
+                    Value
+                </th>
+            </tr>
+
+            {table_rows}
+
+        </table>
+
+        <br>
+        <hr>
+        <br>
+
+        {changes_html}
+
+        {changelog_html}
+
+        <br>
+
+        <p style="font-size:12px;color:#777;">
+            Generated automatically by GitHub Actions
+        </p>
+
+    </body>
+    </html>
+    """
+
+    return html
+
+
+def send_email(subject, html_content):
+
     if not RESEND_API_KEY or not EMAIL_TO:
         print("[WARN] Missing email env vars")
         return
@@ -182,52 +331,8 @@ def send_email(subject, body):
         "Content-Type": "application/json"
     }
 
-    html_content = f"""
-    <html>
-    <body style="
-        font-family: Arial, sans-serif;
-        line-height: 1.6;
-        color: #222;
-        padding: 20px;
-    ">
-
-        <h2>AI Act Standards Monitor</h2>
-
-        <p>
-            Monitoring update detected.
-        </p>
-
-        <div style="
-            background:#f4f4f4;
-            padding:15px;
-            border-radius:8px;
-            white-space:pre-wrap;
-            font-family:Consolas, monospace;
-        ">
-{body}
-        </div>
-
-        <br>
-
-        <p>
-            Source website:
-            <a href="https://ai-act-standards.com/" target="_blank">
-                https://ai-act-standards.com/
-            </a>
-        </p>
-
-        <hr>
-
-        <p style="font-size:12px;color:#777;">
-            Sent automatically by GitHub Actions
-        </p>
-
-    </body>
-    </html>
-    """
-
     payload = {
-        "from": "AI Act Monitor <onboarding@resend.dev>",
+        "from": "AI Monitor <onboarding@resend.dev>",
         "to": [EMAIL_TO],
         "subject": subject,
         "html": html_content
@@ -247,6 +352,7 @@ def send_email(subject, body):
 
 
 def main():
+
     js = fetch_js()
 
     standards = extract_array(js, "standards")
@@ -273,25 +379,21 @@ def main():
 
     previous = load_previous()
 
-    # 第一次运行
     if previous is None or previous == {}:
+
         print("[INFO] First run")
 
-        save_current(current)
+        metric_changes = []
+        new_entries = []
 
-        send_email(
-            "AI Act Monitor Initialized",
-            json.dumps(current, indent=2, ensure_ascii=False)
+    else:
+
+        metric_changes, new_entries = compare(
+            previous,
+            current
         )
 
-        return
-
-    metric_changes, new_entries = compare(
-        previous,
-        current
-    )
-
-    # 无变化
+    # 无变化且非测试模式
     if (
         not metric_changes
         and not new_entries
@@ -303,40 +405,15 @@ def main():
 
         return
 
-    lines = []
-
-    if FORCE_EMAIL:
-        lines.append("TEST MODE ENABLED")
-        lines.append("")
-
-    if metric_changes:
-        lines.append("=== METRIC CHANGES ===")
-
-        for c in metric_changes:
-            lines.append(c)
-
-    if new_entries:
-        lines.append("")
-        lines.append("=== NEW CHANGELOG ENTRIES ===")
-
-        for item in new_entries:
-            lines.append(
-                f"{item.get('date')} | "
-                f"{item.get('standard')} | "
-                f"{item.get('description')}"
-            )
-
-    if FORCE_EMAIL and not metric_changes and not new_entries:
-        lines.append("No actual changes.")
-        lines.append("This is a forced test email.")
-
-    body = "\n".join(lines)
-
-    print(body)
+    html_content = build_dashboard_html(
+        current,
+        metric_changes,
+        new_entries
+    )
 
     send_email(
         "AI Act Standards Monitor",
-        body
+        html_content
     )
 
     save_current(current)
