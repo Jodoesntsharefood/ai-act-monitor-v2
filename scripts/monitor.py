@@ -227,7 +227,7 @@ def send_email(subject, body):
     """
 
     payload = {
-        "from": "AI ACT Monitor <onboarding@resend.dev>",
+        "from": "AI Act Monitor <onboarding@resend.dev>",
         "to": [EMAIL_TO],
         "subject": subject,
         "html": html_content
