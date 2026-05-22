@@ -79,6 +79,7 @@ def extract_array(js, var_name):
 
 
 def calculate_metrics(standards, normrefs):
+
     all_items = standards + [
         r for r in normrefs if "stage" in r
     ]
@@ -94,16 +95,21 @@ def calculate_metrics(standards, normrefs):
     }
 
     for item in all_items:
+
         stage = item.get("stage", 0)
 
         if stage >= 60:
             counts["stage_60"] += 1
+
         elif stage >= 50:
             counts["stage_50"] += 1
+
         elif stage >= 40:
             counts["stage_40"] += 1
+
         elif stage >= 20:
             counts["stage_20"] += 1
+
         elif stage >= 10:
             counts["stage_10"] += 1
 
@@ -111,6 +117,7 @@ def calculate_metrics(standards, normrefs):
 
 
 def load_previous():
+
     if not os.path.exists(DATA_FILE):
         return None
 
@@ -126,6 +133,7 @@ def load_previous():
 
 
 def save_current(data):
+
     os.makedirs("data", exist_ok=True)
 
     with open(DATA_FILE, "w", encoding="utf-8") as f:
@@ -135,6 +143,7 @@ def save_current(data):
 
 
 def compare(old, new):
+
     metric_changes = []
 
     metric_keys = [
@@ -148,10 +157,12 @@ def compare(old, new):
     ]
 
     for key in metric_keys:
+
         old_val = old.get(key, 0)
         new_val = new.get(key, 0)
 
         if old_val != new_val:
+
             metric_changes.append({
                 "key": key,
                 "old": old_val,
@@ -166,6 +177,7 @@ def compare(old, new):
     new_entries = []
 
     for item in new.get("changelog", []):
+
         s = json.dumps(item, sort_keys=True)
 
         if s not in old_logs:
@@ -205,17 +217,30 @@ def build_dashboard_html(current, metric_changes, new_entries):
             new_val = change_lookup[key]["new"]
 
             if new_val > old_val:
-                badge = " 🟢 ↑"
+                badge = " 🟢"
+
             elif new_val < old_val:
-                badge = " 🔴 ↓"
+                badge = " 🔴"
 
         table_rows += f"""
         <tr>
-            <td style="padding:10px;border:1px solid #ddd;">
+            <td style="
+                padding:8px 12px;
+                border:1px solid #ddd;
+                width:70%;
+                font-size:14px;
+            ">
                 {label}
             </td>
 
-            <td style="padding:10px;border:1px solid #ddd;">
+            <td style="
+                padding:8px 12px;
+                border:1px solid #ddd;
+                width:30%;
+                text-align:center;
+                font-size:14px;
+                font-weight:bold;
+            ">
                 {value}{badge}
             </td>
         </tr>
@@ -226,7 +251,10 @@ def build_dashboard_html(current, metric_changes, new_entries):
     if metric_changes:
 
         changes_html += """
-        <h3>📝 Changes</h3>
+        <h3 style="margin-top:30px;">
+            📝 Changes
+        </h3>
+
         <ul>
         """
 
@@ -245,25 +273,30 @@ def build_dashboard_html(current, metric_changes, new_entries):
     if new_entries:
 
         changelog_html += """
-        <h3>📌 New Changelog Entries</h3>
+        <h3 style="margin-top:30px;">
+            📌 New Changelog Entries
+        </h3>
+
         <ul>
         """
 
         for item in new_entries:
 
             changelog_html += f"""
-            <li>
+            <li style="margin-bottom:15px;">
                 <b>{item.get('date')}</b><br>
+
                 {item.get('standard')}<br>
+
                 {item.get('description')}
             </li>
-            <br>
             """
 
         changelog_html += "</ul>"
 
     html = f"""
     <html>
+
     <body style="
         font-family: Arial, sans-serif;
         padding: 20px;
@@ -271,37 +304,47 @@ def build_dashboard_html(current, metric_changes, new_entries):
         line-height: 1.6;
     ">
 
-        <h2>📊 AI Act Monitor Dashboard</h2>
+        <h2>
+            📊 AI Act Monitor Dashboard
+        </h2>
 
         <p>
             🔗 Source:
             <a href="https://ai-act-standards.com/" target="_blank">
-                https://ai-act-standards.com/
+                ai-act-standards.com
             </a>
         </p>
 
         <table style="
             border-collapse: collapse;
-            width: 420px;
-            margin-top: 15px;
+            width: 320px;
+            margin-top: 12px;
+            font-size:14px;
         ">
-            <tr style="background:#f4f4f4;">
-                <th style="padding:10px;border:1px solid #ddd;">
+
+            <tr style="background:#f7f7f7;">
+
+                <th style="
+                    padding:8px 12px;
+                    border:1px solid #ddd;
+                    text-align:left;
+                ">
                     Metric
                 </th>
 
-                <th style="padding:10px;border:1px solid #ddd;">
+                <th style="
+                    padding:8px 12px;
+                    border:1px solid #ddd;
+                    text-align:center;
+                ">
                     Value
                 </th>
+
             </tr>
 
             {table_rows}
 
         </table>
-
-        <br>
-        <hr>
-        <br>
 
         {changes_html}
 
@@ -309,11 +352,17 @@ def build_dashboard_html(current, metric_changes, new_entries):
 
         <br>
 
-        <p style="font-size:12px;color:#777;">
+        <hr>
+
+        <p style="
+            font-size:12px;
+            color:#777;
+        ">
             Generated automatically by GitHub Actions
         </p>
 
     </body>
+
     </html>
     """
 
@@ -332,7 +381,7 @@ def send_email(subject, html_content):
     }
 
     payload = {
-        "from": "AI Monitor <onboarding@resend.dev>",
+        "from": "AI Act Monitor <onboarding@resend.dev>",
         "to": [EMAIL_TO],
         "subject": subject,
         "html": html_content
