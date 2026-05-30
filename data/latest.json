@@ -1,13 +1,25 @@
 {
   "total_standards": 16,
   "stage_10": 1,
-  "stage_20": 5,
-  "stage_40": 5,
+  "stage_20": 4,
+  "stage_40": 6,
   "stage_50": 2,
   "stage_60": 3,
   "ojeu": 0,
-  "timestamp": "2026-05-30T13:28:15.613686",
+  "timestamp": "2026-05-30T19:15:11.100288",
   "changelog": [
+    {
+      "date": "2026-05-30",
+      "standard": "Multiple",
+      "type": "Articles",
+      "description": "Added Article 11 based on latest draft ZAs"
+    },
+    {
+      "date": "2026-05-30",
+      "standard": "ISO/IEC 4213 (2nd edition)",
+      "type": "Stage Progression",
+      "description": "Start of DIS"
+    },
     {
       "date": "2026-05-19",
       "standard": "ISO/IEC 24970",
