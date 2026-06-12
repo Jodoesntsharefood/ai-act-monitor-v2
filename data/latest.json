@@ -3,11 +3,17 @@
   "stage_10": 1,
   "stage_20": 4,
   "stage_40": 6,
-  "stage_50": 2,
-  "stage_60": 3,
+  "stage_50": 1,
+  "stage_60": 4,
   "ojeu": 0,
-  "timestamp": "2026-06-12T03:55:46.144166",
+  "timestamp": "2026-06-12T10:12:45.911965",
   "changelog": [
+    {
+      "date": "2026-06-12",
+      "standard": "EN 18286",
+      "type": "Stage Progression",
+      "description": "Successful completion of FV"
+    },
     {
       "date": "2026-05-30",
       "standard": "Multiple",
