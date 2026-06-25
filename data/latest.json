@@ -1,13 +1,19 @@
 {
-  "total_standards": 16,
+  "total_standards": 18,
   "stage_10": 1,
-  "stage_20": 4,
+  "stage_20": 6,
   "stage_40": 6,
   "stage_50": 1,
   "stage_60": 4,
   "ojeu": 0,
-  "timestamp": "2026-06-25T09:20:30.633967",
+  "timestamp": "2026-06-25T14:31:39.744761",
   "changelog": [
+    {
+      "date": "2026-06-25",
+      "standard": "EN 18229",
+      "type": "Scope split",
+      "description": "Split of 18229 into five parts"
+    },
     {
       "date": "2026-06-12",
       "standard": "EN 18286",
