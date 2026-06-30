@@ -1,13 +1,19 @@
 {
-  "total_standards": 18,
+  "total_standards": 16,
   "stage_10": 1,
   "stage_20": 5,
   "stage_40": 7,
   "stage_50": 1,
-  "stage_60": 4,
+  "stage_60": 2,
   "ojeu": 0,
-  "timestamp": "2026-06-30T14:17:27.102499",
+  "timestamp": "2026-06-30T19:58:02.702894",
   "changelog": [
+    {
+      "date": "2026-06-30",
+      "standard": "prEN 18283",
+      "type": "Normative references",
+      "description": "Removed outdated ref to 12791."
+    },
     {
       "date": "2026-06-30",
       "standard": "prEN ISO/IEC 23282",
