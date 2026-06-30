@@ -1,13 +1,25 @@
 {
   "total_standards": 18,
   "stage_10": 1,
-  "stage_20": 6,
-  "stage_40": 6,
+  "stage_20": 5,
+  "stage_40": 7,
   "stage_50": 1,
   "stage_60": 4,
   "ojeu": 0,
-  "timestamp": "2026-06-30T09:34:04.596337",
+  "timestamp": "2026-06-30T14:17:27.102499",
   "changelog": [
+    {
+      "date": "2026-06-30",
+      "standard": "prEN ISO/IEC 23282",
+      "type": "Stage progression",
+      "description": "Project moves to DIS/Enquiry"
+    },
+    {
+      "date": "2026-06-25",
+      "standard": "EN 18229",
+      "type": "Scope split",
+      "description": "Split of 18229 into five parts"
+    },
     {
       "date": "2026-06-25",
       "standard": "EN 18229",
