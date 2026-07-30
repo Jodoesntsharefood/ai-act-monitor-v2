@@ -1,13 +1,19 @@
 {
   "total_standards": 16,
   "stage_10": 1,
-  "stage_20": 5,
-  "stage_40": 7,
+  "stage_20": 4,
+  "stage_40": 8,
   "stage_50": 1,
   "stage_60": 2,
   "ojeu": 0,
-  "timestamp": "2026-07-30T08:24:53.330045",
+  "timestamp": "2026-07-30T13:58:30.410250",
   "changelog": [
+    {
+      "date": "2026-07-30",
+      "standard": "prEN 18229-3",
+      "type": "Stage progression",
+      "description": "Standard reaches Enquiry stage."
+    },
     {
       "date": "2026-06-30",
       "standard": "prEN 18283",
